@@ -21,23 +21,24 @@ _AMOUNT_GUIDE: dict[str, dict[str, int]] = {
     "직장상사": {"결혼": 100_000, "돌잔치": 70_000, "부고": 70_000, "생일": 0},
     "친척":     {"결혼": 200_000, "돌잔치": 100_000, "부고": 100_000, "생일": 50_000},
     "아는사람": {"결혼": 50_000,  "돌잔치": 30_000, "부고": 50_000, "생일": 0},
+    "모르는사람": {"결혼": 50_000, "돌잔치": 30_000, "부고": 50_000, "생일": 0},
 }
 
 _MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
     "결혼": {
-        "따뜻한": "{name}의 결혼을 진심으로 축하해! 두 사람이 함께하는 앞날이 사랑과 행복으로 가득하길 바라. 🎊",
+        "따뜻한": "{name_call}! 결혼 진심으로 축하해! 두 사람이 함께하는 앞날이 사랑과 행복으로 가득하길 바라. 🎊",
         "격식있는": "{name} 결혼을 진심으로 축하드립니다. 앞으로의 새 출발이 항상 행복하고 건강하시길 기원합니다.",
     },
     "돌잔치": {
-        "따뜻한": "{name} 아이의 첫 돌잔치를 진심으로 축하해! 건강하고 씩씩하게 자라길 바라. 🎂",
+        "따뜻한": "{name_call}! 아이 첫 돌잔치 진심으로 축하해! 건강하고 씩씩하게 자라길 바라. 🎂",
         "격식있는": "{name} 소중한 아이의 첫 돌을 진심으로 축하드립니다. 건강하고 밝게 자라나길 기원합니다.",
     },
     "부고": {
-        "따뜻한": "삼가 고인의 명복을 빕니다. {name}, 힘든 시간 잘 이겨내길 진심으로 응원해.",
+        "따뜻한": "삼가 고인의 명복을 빕니다. {name_call}... 힘든 시간 잘 이겨내길 진심으로 응원해.",
         "격식있는": "삼가 고인의 명복을 빌며, {name}께서 빠른 시일 내에 평안을 찾으시길 기원합니다.",
     },
     "생일": {
-        "따뜻한": "{name} 생일 축하해! 오늘 하루도 특별하고 행복한 날이 되길! 🎉",
+        "따뜻한": "{name_call}! 생일 축하해! 오늘 하루도 특별하고 행복한 날이 되길! 🎉",
         "격식있는": "{name}의 생신을 진심으로 축하드립니다. 건강하고 행복한 한 해 되세요.",
     },
 }
@@ -45,6 +46,21 @@ _MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
 _VALID_TONES = {"따뜻한", "격식있는"}
 
 _WEDDING_NOTE = "\n📌 참고: 서울 결혼식 뷔페 식대 1인 8~12만원 수준 (지역·행사에 따라 상이)"
+
+
+def _extract_firstname(name: str) -> str:
+    """성+이름에서 이름 부분만 추출한다. 3글자 이상이면 마지막 2글자를 이름으로 간주한다."""
+    return name[-2:] if len(name) >= 3 else name
+
+
+def _korean_vocative(name: str) -> str:
+    """한국어 이름에 받침 여부에 따라 '아' 또는 '야' 호칭을 붙여 반환한다."""
+    if not name:
+        return name
+    code = ord(name[-1])
+    if 0xAC00 <= code <= 0xD7A3:
+        return name + ("아" if (code - 0xAC00) % 28 != 0 else "야")
+    return name + "아"
 
 
 def _get_db() -> sqlite3.Connection:
@@ -341,7 +357,12 @@ def generate_message(
         available = ", ".join(_MESSAGE_TEMPLATES.keys())
         return f"'{event_type}'에 대한 메시지 템플릿이 없습니다. 사용 가능한 종류: {available}"
 
-    message = template.format(name=person_name)
+    if tone == "따뜻한":
+        firstname = _extract_firstname(person_name)
+        name_call = _korean_vocative(firstname)
+    else:
+        name_call = person_name
+    message = template.format(name=person_name, name_call=name_call)
     return f'💬 추천 메시지 ({tone}):\n\n"{message}"'
 
 

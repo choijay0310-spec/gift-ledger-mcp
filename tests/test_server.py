@@ -168,6 +168,19 @@ class TestGenerateMessage:
         result = generate_message("생일", "예린")
         assert "예린" in result
 
+    def test_warm_tone_full_name_uses_firstname_vocative(self):
+        result = generate_message("돌잔치", "박지훈")
+        assert "지훈아" in result
+        assert "박지훈" not in result.split('"')[1]  # 메시지 본문에 성 제거 확인
+
+    def test_warm_tone_short_name_adds_vocative(self):
+        result = generate_message("생일", "민수")
+        assert "민수야" in result
+
+    def test_warm_tone_name_with_batchim_adds_ah(self):
+        result = generate_message("결혼", "김지훈")
+        assert "지훈아" in result
+
 
 # ──────────────────────────────────────────────
 # summarize_monthly

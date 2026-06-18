@@ -39,11 +39,11 @@ class TestRecordEvent:
         result = record_event("김철수", "친한친구", "결혼", 100_000, "given", "2026-05-01")
         assert "김철수" in result
         assert "100,000원" in result
-        assert "냈습니다" in result
+        assert "지출" in result
 
     def test_received_direction_returns_received_label(self):
         result = record_event("이영희", "친척", "돌잔치", 50_000, "received", "2026-06-01")
-        assert "받았습니다" in result
+        assert "수령" in result
 
     def test_invalid_direction_returns_error(self):
         result = record_event("홍길동", "직장동료", "결혼", 50_000, "WRONG")
@@ -104,12 +104,12 @@ class TestListEvents:
 class TestRecommendAmount:
     def test_known_relationship_and_type(self):
         result = recommend_amount("친한친구", "결혼")
-        assert "100,000원" in result
+        assert "150,000원" in result
         assert "범위" in result
 
     def test_unknown_returns_no_data_message(self):
         result = recommend_amount("모르는관계", "파티")
-        assert "없습니다" in result
+        assert "⚠️" in result
 
     def test_personal_history_appended(self):
         record_event("X", "직장동료", "결혼", 70_000, "given")

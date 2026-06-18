@@ -13,23 +13,24 @@ mcp = FastMCP(
     port=int(os.environ.get("FASTMCP_PORT", "8000")),
 )
 
-# 관계·경조사 유형별 적정 금액 기준표 (원)
+# 관계·경조사 유형별 적정 금액 기준표 (원) — 2025년 한국 기준
+# 서울 결혼식 뷔페 식대 1인 8~12만원 수준 반영
 _AMOUNT_GUIDE: dict[str, dict[str, int]] = {
-    "친한친구": {"결혼": 100_000, "돌잔치": 50_000, "부고": 50_000, "생일": 30_000},
-    "직장동료": {"결혼": 50_000, "돌잔치": 30_000, "부고": 30_000, "생일": 0},
-    "직장상사": {"결혼": 100_000, "돌잔치": 50_000, "부고": 50_000, "생일": 0},
-    "친척": {"결혼": 100_000, "돌잔치": 50_000, "부고": 50_000, "생일": 30_000},
-    "아는사람": {"결혼": 30_000, "돌잔치": 0, "부고": 30_000, "생일": 0},
+    "친한친구": {"결혼": 150_000, "돌잔치": 70_000, "부고": 70_000, "생일": 50_000},
+    "직장동료": {"결혼": 70_000,  "돌잔치": 50_000, "부고": 50_000, "생일": 0},
+    "직장상사": {"결혼": 100_000, "돌잔치": 70_000, "부고": 70_000, "생일": 0},
+    "친척":     {"결혼": 200_000, "돌잔치": 100_000, "부고": 100_000, "생일": 50_000},
+    "아는사람": {"결혼": 50_000,  "돌잔치": 30_000, "부고": 50_000, "생일": 0},
 }
 
 _MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
     "결혼": {
-        "따뜻한": "{name}의 새로운 시작을 진심으로 축하해! 두 사람이 함께하는 앞날이 행복으로 가득하길 바라. 🎊",
+        "따뜻한": "{name}의 결혼을 진심으로 축하해! 두 사람이 함께하는 앞날이 사랑과 행복으로 가득하길 바라. 🎊",
         "격식있는": "{name} 결혼을 진심으로 축하드립니다. 앞으로의 새 출발이 항상 행복하고 건강하시길 기원합니다.",
     },
     "돌잔치": {
-        "따뜻한": "아이의 첫 번째 생일 정말 축하해! 건강하고 씩씩하게 자라길 바라. 🎂",
-        "격식있는": "소중한 아이의 첫 돌을 진심으로 축하드립니다. 건강하고 밝게 자라나길 기원합니다.",
+        "따뜻한": "{name} 아이의 첫 돌잔치를 진심으로 축하해! 건강하고 씩씩하게 자라길 바라. 🎂",
+        "격식있는": "{name} 소중한 아이의 첫 돌을 진심으로 축하드립니다. 건강하고 밝게 자라나길 기원합니다.",
     },
     "부고": {
         "따뜻한": "삼가 고인의 명복을 빕니다. {name}, 힘든 시간 잘 이겨내길 진심으로 응원해.",
@@ -42,6 +43,8 @@ _MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
 }
 
 _VALID_TONES = {"따뜻한", "격식있는"}
+
+_WEDDING_NOTE = "\n📌 참고: 서울 결혼식 뷔페 식대 1인 8~12만원 수준 (지역·행사에 따라 상이)"
 
 
 def _get_db() -> sqlite3.Connection:
@@ -107,11 +110,11 @@ def record_event(
 
     event_date = event_date or date.today().isoformat()
     if len(event_date) != 10 or event_date[4] != "-" or event_date[7] != "-":
-        return "오류: 날짜 형식이 잘못되었습니다. YYYY-MM-DD 형식으로 입력해 주세요. (예: 2026-06-17)"
+        return "오류: 날짜 형식이 잘못되었습니다. YYYY-MM-DD 형식으로 입력해 주세요. (예: 2026-06-18)"
     try:
         date.fromisoformat(event_date)
     except ValueError:
-        return "오류: 날짜 형식이 잘못되었습니다. YYYY-MM-DD 형식으로 입력해 주세요. (예: 2026-06-17)"
+        return "오류: 날짜 형식이 잘못되었습니다. YYYY-MM-DD 형식으로 입력해 주세요. (예: 2026-06-18)"
 
     person = person.strip()
     relationship = relationship.strip()
@@ -127,10 +130,15 @@ def record_event(
         )
         conn.commit()
 
-    direction_label = "냈습니다" if direction == "given" else "받았습니다"
+    direction_label = "지출" if direction == "given" else "수령"
+    note_line = f"\n  📝 메모: {note}" if note else ""
     return (
-        f"✅ {event_date} | {person}({relationship}) {event_type}에 "
-        f"{amount:,}원을 {direction_label}. 기록 완료!"
+        f"✅ 기록 완료!\n"
+        f"  👤 이름: {person} ({relationship})\n"
+        f"  🎉 경조사: {event_type}\n"
+        f"  💰 금액: {amount:,}원 ({direction_label})\n"
+        f"  📅 날짜: {event_date}"
+        f"{note_line}"
     )
 
 
@@ -187,17 +195,18 @@ def list_events(
 
     total_given, total_received = _calculate_totals(rows)
 
-    lines = [f"📋 경조사 기록 ({len(rows)}건):\n"]
-    for r in rows:
-        label = "▶ 냄" if r["direction"] == "given" else "◀ 받음"
+    lines = [f"📋 경조사 기록 ({len(rows)}건)\n" + "─" * 40]
+    for i, r in enumerate(rows, 1):
+        label = "▶ 지출" if r["direction"] == "given" else "◀ 수령"
         lines.append(
-            f"  {r['event_date']} | {r['person']}({r['relationship']}) "
-            f"| {r['event_type']} | {r['amount']:,}원 | {label}"
+            f"{i}. {r['event_date']}  {r['person']} ({r['relationship']})\n"
+            f"   {r['event_type']}  {r['amount']:,}원  {label}"
         )
         if r["note"]:
-            lines.append(f"    메모: {r['note']}")
+            lines.append(f"   📝 {r['note']}")
 
-    lines.append(f"\n💰 소계: 지출 {total_given:,}원 | 수입 {total_received:,}원")
+    lines.append("─" * 40)
+    lines.append(f"💰 소계: 지출 {total_given:,}원 | 수령 {total_received:,}원")
     return "\n".join(lines)
 
 
@@ -212,22 +221,37 @@ def recommend_amount(
         relationship: 관계 (친한친구/직장동료/직장상사/친척/아는사람)
         event_type: 경조사 종류 (결혼/돌잔치/부고/생일)
     """
-    guide = _AMOUNT_GUIDE.get(relationship, {})
-    base = guide.get(event_type, 0)
+    rel_guide = _AMOUNT_GUIDE.get(relationship)
+
+    if rel_guide is None:
+        valid_relationships = ", ".join(_AMOUNT_GUIDE.keys())
+        return (
+            f"⚠️ '{relationship}'은 등록된 관계가 아닙니다.\n"
+            f"지원 관계: {valid_relationships}\n"
+            "가장 가까운 관계를 선택하거나 직접 판단해 주세요."
+        )
+
+    base = rel_guide.get(event_type)
+
+    if base is None:
+        valid_types = ", ".join(rel_guide.keys())
+        return (
+            f"⚠️ '{relationship}'의 '{event_type}'에 대한 금액 데이터가 없습니다.\n"
+            f"지원 경조사: {valid_types}"
+        )
 
     if base == 0:
-        valid_relationships = ", ".join(_AMOUNT_GUIDE.keys())
-        result = f"⚠️ '{relationship}'의 '{event_type}'에 대한 표준 금액 데이터가 없습니다.\n"
-        result += f"지원 관계: {valid_relationships}\n"
-        result += "비슷한 경우를 참고하거나 직접 판단해 주세요."
+        result = f"💡 {relationship} {event_type}: 일반적으로 금액 없이 마음으로 챙기는 경우가 많습니다."
     else:
         low = int(base * 0.8)
         high = int(base * 1.5)
+        extra = _WEDDING_NOTE if event_type == "결혼" else ""
         result = (
-            f"💰 {relationship} {event_type} 적정 금액:\n"
-            f"  기본: {base:,}원\n"
-            f"  범위: {low:,}원 ~ {high:,}원\n"
-            f"  친밀도·상황에 따라 조정하세요."
+            f"💰 {relationship} {event_type} 적정 금액 (2025년 기준)\n"
+            f"─────────────────────────\n"
+            f"  기본 추천: {base:,}원\n"
+            f"  적정 범위: {low:,}원 ~ {high:,}원\n"
+            f"  ※ 친밀도·지역·행사 규모에 따라 조정하세요.{extra}"
         )
 
     with _get_db() as conn:
@@ -239,7 +263,7 @@ def recommend_amount(
     if rows:
         amounts = [r["amount"] for r in rows]
         avg = round(sum(amounts) / len(amounts))
-        result += f"\n\n📊 내 과거 기록: 동일 유형에 평균 {avg:,}원 냈습니다."
+        result += f"\n\n📊 내 과거 기록: 동일 유형 평균 {avg:,}원 지출"
 
     return result
 
@@ -268,20 +292,22 @@ def check_balance(person: str) -> str:
 
     matched_names = sorted(set(r["person"] for r in rows))
     if len(matched_names) > 1:
-        header = f"📋 '{person}' 검색 결과 — {', '.join(matched_names)} 포함 {len(rows)}건:\n"
+        header = f"📋 '{person}' 검색 결과 — {', '.join(matched_names)} ({len(rows)}건)"
     else:
-        header = f"📋 {matched_names[0]}과의 경조사 내역:\n"
+        header = f"📋 {matched_names[0]}과의 경조사 내역 ({len(rows)}건)"
 
-    lines = [header]
+    lines = [header, "─" * 40]
     for r in rows:
-        label = "▶ 내가 냄" if r["direction"] == "given" else "◀ 받음"
+        label = "▶ 지출" if r["direction"] == "given" else "◀ 수령"
         lines.append(
-            f"  {r['event_date']} | {r['person']} {r['event_type']} | {r['amount']:,}원 | {label}"
+            f"  {r['event_date']}  {r['person']} {r['event_type']}\n"
+            f"  {r['amount']:,}원  {label}"
         )
         if r["note"]:
-            lines.append(f"    메모: {r['note']}")
+            lines.append(f"  📝 {r['note']}")
 
-    lines.append(f"\n💰 합계: 내가 낸 것 {total_given:,}원 | 받은 것 {total_received:,}원")
+    lines.append("─" * 40)
+    lines.append(f"💰 합계: 내가 낸 것 {total_given:,}원 | 받은 것 {total_received:,}원")
     if balance > 0:
         lines.append(f"➡ 내가 {balance:,}원 더 씀")
     elif balance < 0:
@@ -316,7 +342,7 @@ def generate_message(
         return f"'{event_type}'에 대한 메시지 템플릿이 없습니다. 사용 가능한 종류: {available}"
 
     message = template.format(name=person_name)
-    return f'💬 추천 메시지:\n"{message}"'
+    return f'💬 추천 메시지 ({tone}):\n\n"{message}"'
 
 
 @mcp.tool()
@@ -357,18 +383,19 @@ def summarize_monthly(
         if r["direction"] == "given":
             by_type[r["event_type"]] = by_type.get(r["event_type"], 0) + r["amount"]
 
-    lines = [f"📅 {year}년 {month}월 경조사 요약 ({len(rows)}건):\n"]
-    for r in rows:
-        label = "▶ 냄" if r["direction"] == "given" else "◀ 받음"
-        lines.append(f"  {r['event_date']} | {r['person']} {r['event_type']} | {r['amount']:,}원 | {label}")
+    lines = [f"📅 {year}년 {month}월 경조사 요약 ({len(rows)}건)", "─" * 40]
+    for i, r in enumerate(rows, 1):
+        label = "▶ 지출" if r["direction"] == "given" else "◀ 수령"
+        lines.append(f"{i}. {r['event_date']}  {r['person']} {r['event_type']}  {r['amount']:,}원  {label}")
 
-    lines.append(f"\n💰 지출: {total_given:,}원 | 수입: {total_received:,}원")
+    lines.append("─" * 40)
+    lines.append(f"💰 지출: {total_given:,}원 | 수령: {total_received:,}원")
     lines.append(f"   순 지출: {total_given - total_received:,}원")
 
     if by_type:
         lines.append("\n📊 유형별 지출:")
         for t, amt in sorted(by_type.items(), key=lambda x: -x[1]):
-            lines.append(f"  {t}: {amt:,}원")
+            lines.append(f"  · {t}: {amt:,}원")
 
     return "\n".join(lines)
 

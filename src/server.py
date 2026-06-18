@@ -7,7 +7,11 @@ from mcp.server.fastmcp import FastMCP
 
 DB_PATH = os.environ.get("DB_PATH", "/tmp/giftledger.db")
 
-mcp = FastMCP("경조사비 비서")
+mcp = FastMCP(
+    "경조사비 비서",
+    host=os.environ.get("FASTMCP_HOST", "127.0.0.1"),
+    port=int(os.environ.get("FASTMCP_PORT", "8000")),
+)
 
 # 관계·경조사 유형별 적정 금액 기준표 (원)
 _AMOUNT_GUIDE: dict[str, dict[str, int]] = {
@@ -372,7 +376,6 @@ def summarize_monthly(
 if __name__ == "__main__":
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport == "streamable-http":
-        port = int(os.environ.get("PORT", "8000"))
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+        mcp.run(transport="streamable-http")
     else:
         mcp.run(transport="stdio")

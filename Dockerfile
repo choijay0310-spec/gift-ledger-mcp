@@ -10,5 +10,7 @@ COPY src/ ./src/
 EXPOSE 8000
 
 ENV MCP_TRANSPORT=streamable-http
+ENV FASTMCP_HOST=0.0.0.0
+ENV FASTMCP_PORT=8000
 
 CMD ["python", "src/server.py"]

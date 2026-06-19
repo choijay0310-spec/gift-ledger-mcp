@@ -1,7 +1,9 @@
 import os
+import re
 import sqlite3
+from contextlib import contextmanager
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Generator, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -21,7 +23,6 @@ _AMOUNT_GUIDE: dict[str, dict[str, int]] = {
     "직장상사": {"결혼": 100_000, "돌잔치": 70_000, "부고": 70_000, "생일": 0},
     "친척":     {"결혼": 200_000, "돌잔치": 100_000, "부고": 100_000, "생일": 50_000},
     "아는사람": {"결혼": 50_000,  "돌잔치": 30_000, "부고": 50_000, "생일": 0},
-    "모르는사람": {"결혼": 50_000, "돌잔치": 30_000, "부고": 50_000, "생일": 0},
 }
 
 _MESSAGE_TEMPLATES: dict[str, dict[str, str]] = {
@@ -47,6 +48,13 @@ _VALID_TONES = {"따뜻한", "격식있는"}
 
 _WEDDING_NOTE = "\n📌 참고: 서울 결혼식 뷔페 식대 1인 8~12만원 수준 (지역·행사에 따라 상이)"
 
+_AMOUNT_RANGE_LOW: float = 0.8
+_AMOUNT_RANGE_HIGH: float = 1.5
+
+_MIN_YEAR: int = 1900
+_MAX_YEAR: int = 2100
+_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 
 def _extract_firstname(name: str) -> str:
     """성+이름에서 이름 부분만 추출한다. 3글자 이상이면 마지막 2글자를 이름으로 간주한다."""
@@ -63,7 +71,8 @@ def _korean_vocative(name: str) -> str:
     return name + "아"
 
 
-def _get_db() -> sqlite3.Connection:
+@contextmanager
+def _get_db() -> Generator[sqlite3.Connection, None, None]:
     conn = sqlite3.connect(os.environ.get("DB_PATH", DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("""
@@ -80,11 +89,16 @@ def _get_db() -> sqlite3.Connection:
         )
     """)
     conn.commit()
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
-def _calculate_totals(rows: list) -> tuple[int, int]:
+def _calculate_totals(rows: list[sqlite3.Row]) -> tuple[int, int]:
     """(지출 합계, 수입 합계) 반환."""
+    if not rows:
+        return 0, 0
     total_given = sum(r["amount"] for r in rows if r["direction"] == "given")
     total_received = sum(r["amount"] for r in rows if r["direction"] == "received")
     return total_given, total_received
@@ -111,11 +125,15 @@ def record_event(
         event_date: 날짜 YYYY-MM-DD, 생략 시 오늘
         note: 메모 (선택)
     """
-    if not person or not person.strip():
+    person = person.strip() if person else ""
+    relationship = relationship.strip() if relationship else ""
+    event_type = event_type.strip() if event_type else ""
+
+    if not person:
         return "오류: 상대방 이름을 입력하세요."
-    if not relationship or not relationship.strip():
+    if not relationship:
         return "오류: 관계를 입력하세요."
-    if not event_type or not event_type.strip():
+    if not event_type:
         return "오류: 경조사 종류를 입력하세요."
     if amount <= 0:
         return "오류: 금액은 1원 이상이어야 합니다."
@@ -125,26 +143,26 @@ def record_event(
         return "오류: 메모는 1000자 이내여야 합니다."
 
     event_date = event_date or date.today().isoformat()
-    if len(event_date) != 10 or event_date[4] != "-" or event_date[7] != "-":
+    if not _DATE_PATTERN.match(event_date):
         return "오류: 날짜 형식이 잘못되었습니다. YYYY-MM-DD 형식으로 입력해 주세요. (예: 2026-06-18)"
     try:
         date.fromisoformat(event_date)
     except ValueError:
-        return "오류: 날짜 형식이 잘못되었습니다. YYYY-MM-DD 형식으로 입력해 주세요. (예: 2026-06-18)"
+        return "오류: 유효하지 않은 날짜입니다. (예: 2026-06-18)"
 
-    person = person.strip()
-    relationship = relationship.strip()
-    event_type = event_type.strip()
     now = datetime.now().isoformat()
 
-    with _get_db() as conn:
-        conn.execute(
-            "INSERT INTO events "
-            "(person, relationship, event_type, amount, direction, event_date, note, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (person, relationship, event_type, amount, direction, event_date, note, now),
-        )
-        conn.commit()
+    try:
+        with _get_db() as conn:
+            conn.execute(
+                "INSERT INTO events "
+                "(person, relationship, event_type, amount, direction, event_date, note, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (person, relationship, event_type, amount, direction, event_date, note, now),
+            )
+            conn.commit()
+    except sqlite3.OperationalError as e:
+        return f"오류: 데이터베이스 오류가 발생했습니다. ({e})"
 
     direction_label = "지출" if direction == "given" else "수령"
     note_line = f"\n  📝 메모: {note}" if note else ""
@@ -177,13 +195,13 @@ def list_events(
     """
     if direction is not None and direction not in ("given", "received"):
         return "오류: direction은 'given' 또는 'received'여야 합니다."
-    if year is not None and not (1900 <= year <= 2100):
-        return "오류: 연도는 1900~2100 사이로 입력해 주세요."
+    if year is not None and not (_MIN_YEAR <= year <= _MAX_YEAR):
+        return f"오류: 연도는 {_MIN_YEAR}~{_MAX_YEAR} 사이로 입력해 주세요."
     if month is not None and not (1 <= month <= 12):
         return "오류: 월은 1~12 사이로 입력해 주세요."
 
     query = "SELECT * FROM events WHERE 1=1"
-    params: list = []
+    params: list[Any] = []
 
     if person:
         query += " AND person LIKE ?"
@@ -203,8 +221,11 @@ def list_events(
 
     query += " ORDER BY event_date DESC LIMIT 50"
 
-    with _get_db() as conn:
-        rows = conn.execute(query, params).fetchall()
+    try:
+        with _get_db() as conn:
+            rows = conn.execute(query, params).fetchall()
+    except sqlite3.OperationalError as e:
+        return f"오류: 데이터베이스 조회 실패. ({e})"
 
     if not rows:
         return "조건에 맞는 기록이 없습니다."
@@ -237,6 +258,9 @@ def recommend_amount(
         relationship: 관계 (친한친구/직장동료/직장상사/친척/아는사람)
         event_type: 경조사 종류 (결혼/돌잔치/부고/생일)
     """
+    if relationship == "모르는사람":
+        return "💡 모르는 분은 경조사 정보를 접할 방법도 없으니 챙기지 않아도 됩니다."
+
     rel_guide = _AMOUNT_GUIDE.get(relationship)
 
     if rel_guide is None:
@@ -259,8 +283,8 @@ def recommend_amount(
     if base == 0:
         result = f"💡 {relationship} {event_type}: 일반적으로 금액 없이 마음으로 챙기는 경우가 많습니다."
     else:
-        low = int(base * 0.8)
-        high = int(base * 1.5)
+        low = int(base * _AMOUNT_RANGE_LOW)
+        high = int(base * _AMOUNT_RANGE_HIGH)
         extra = _WEDDING_NOTE if event_type == "결혼" else ""
         result = (
             f"💰 {relationship} {event_type} 적정 금액 (2025년 기준)\n"
@@ -270,11 +294,14 @@ def recommend_amount(
             f"  ※ 친밀도·지역·행사 규모에 따라 조정하세요.{extra}"
         )
 
-    with _get_db() as conn:
-        rows = conn.execute(
-            "SELECT amount FROM events WHERE relationship=? AND event_type=? AND direction='given'",
-            (relationship, event_type),
-        ).fetchall()
+    try:
+        with _get_db() as conn:
+            rows = conn.execute(
+                "SELECT amount FROM events WHERE relationship=? AND event_type=? AND direction='given'",
+                (relationship, event_type),
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return result
 
     if rows:
         amounts = [r["amount"] for r in rows]
@@ -294,11 +321,14 @@ def check_balance(person: str) -> str:
     if not person or not person.strip():
         return "오류: 이름을 입력하세요."
 
-    with _get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM events WHERE person LIKE ? ORDER BY event_date DESC",
-            (f"%{person.strip()}%",),
-        ).fetchall()
+    try:
+        with _get_db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM events WHERE person LIKE ? ORDER BY event_date DESC",
+                (f"%{person.strip()}%",),
+            ).fetchall()
+    except sqlite3.OperationalError as e:
+        return f"오류: 데이터베이스 조회 실패. ({e})"
 
     if not rows:
         return f"'{person}'에 대한 기록이 없습니다."
@@ -347,10 +377,14 @@ def generate_message(
         person_name: 상대방 이름 또는 호칭
         tone: 메시지 톤 — 따뜻한(기본) 또는 격식있는
     """
+    if not event_type or not event_type.strip():
+        return "오류: 경조사 종류를 입력하세요."
+    if not person_name or not person_name.strip():
+        return "오류: 이름을 입력하세요."
     if tone not in _VALID_TONES:
         return f"오류: tone은 '따뜻한' 또는 '격식있는' 중 하나여야 합니다."
 
-    event_templates = _MESSAGE_TEMPLATES.get(event_type, {})
+    event_templates = _MESSAGE_TEMPLATES.get(event_type.strip(), {})
     template = event_templates.get(tone)
 
     if template is None:
@@ -381,18 +415,21 @@ def summarize_monthly(
     year = year if year is not None else today.year
     month = month if month is not None else today.month
 
-    if not (1900 <= year <= 2100):
-        return "오류: 연도는 1900~2100 사이로 입력해 주세요."
+    if not (_MIN_YEAR <= year <= _MAX_YEAR):
+        return f"오류: 연도는 {_MIN_YEAR}~{_MAX_YEAR} 사이로 입력해 주세요."
     if not (1 <= month <= 12):
         return "오류: 월은 1~12 사이로 입력해 주세요."
 
-    with _get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM events "
-            "WHERE strftime('%Y', event_date)=? AND strftime('%m', event_date)=? "
-            "ORDER BY event_date",
-            (str(year), f"{month:02d}"),
-        ).fetchall()
+    try:
+        with _get_db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM events "
+                "WHERE strftime('%Y', event_date)=? AND strftime('%m', event_date)=? "
+                "ORDER BY event_date",
+                (str(year), f"{month:02d}"),
+            ).fetchall()
+    except sqlite3.OperationalError as e:
+        return f"오류: 데이터베이스 조회 실패. ({e})"
 
     if not rows:
         return f"{year}년 {month}월 경조사 기록이 없습니다."

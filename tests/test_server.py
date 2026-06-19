@@ -181,6 +181,14 @@ class TestGenerateMessage:
         result = generate_message("결혼", "김지훈")
         assert "지훈아" in result
 
+    def test_empty_event_type_returns_error(self):
+        result = generate_message("", "지수")
+        assert "오류" in result
+
+    def test_empty_person_name_returns_error(self):
+        result = generate_message("결혼", "")
+        assert "오류" in result
+
 
 # ──────────────────────────────────────────────
 # summarize_monthly

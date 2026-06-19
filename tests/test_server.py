@@ -116,6 +116,14 @@ class TestRecommendAmount:
         result = recommend_amount("직장동료", "결혼")
         assert "평균" in result
 
+    def test_moreu_saram_with_space_returns_skip_message(self):
+        result = recommend_amount("모르는 사람", "부고")
+        assert "챙기지 않아도" in result
+
+    def test_moreu_saram_no_space_returns_skip_message(self):
+        result = recommend_amount("모르는사람", "결혼")
+        assert "챙기지 않아도" in result
+
 
 # ──────────────────────────────────────────────
 # check_balance

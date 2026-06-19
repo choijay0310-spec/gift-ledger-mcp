@@ -255,9 +255,10 @@ def recommend_amount(
     """관계와 경조사 종류에 따른 적정 금액을 추천합니다.
 
     Args:
-        relationship: 관계 (친한친구/직장동료/직장상사/친척/아는사람)
+        relationship: 관계 (친한친구/직장동료/직장상사/친척/아는사람/모르는사람)
         event_type: 경조사 종류 (결혼/돌잔치/부고/생일)
     """
+    relationship = relationship.strip().replace(" ", "")
     if relationship == "모르는사람":
         return "💡 모르는 분은 경조사 정보를 접할 방법도 없으니 챙기지 않아도 됩니다."
 

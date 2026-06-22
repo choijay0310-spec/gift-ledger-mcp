@@ -6,6 +6,7 @@ from datetime import date, datetime
 from typing import Any, Generator, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 DB_PATH = os.environ.get("DB_PATH", "/tmp/giftledger.db")
 
@@ -104,7 +105,15 @@ def _calculate_totals(rows: list[sqlite3.Row]) -> tuple[int, int]:
     return total_given, total_received
 
 
-@mcp.tool()
+@mcp.tool(
+    title="경조사비 비서 - 이벤트 기록",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
+)
 def record_event(
     person: str,
     relationship: str,
@@ -114,7 +123,7 @@ def record_event(
     event_date: Optional[str] = None,
     note: str = "",
 ) -> str:
-    """경조사 이벤트를 기록합니다.
+    """경조사비 비서 - 경조사 이벤트를 기록합니다.
 
     Args:
         person: 상대방 이름
@@ -176,7 +185,15 @@ def record_event(
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    title="경조사비 비서 - 기록 조회",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def list_events(
     person: Optional[str] = None,
     event_type: Optional[str] = None,
@@ -184,7 +201,7 @@ def list_events(
     year: Optional[int] = None,
     month: Optional[int] = None,
 ) -> str:
-    """경조사 기록 목록을 조회합니다. (최근 50건 제한)
+    """경조사비 비서 - 경조사 기록 목록을 조회합니다. (최근 50건 제한)
 
     Args:
         person: 특정 인물 필터 — 부분 일치 검색 가능 (선택)
@@ -247,12 +264,20 @@ def list_events(
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(
+    title="경조사비 비서 - 금액 추천",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def recommend_amount(
     relationship: str,
     event_type: str,
 ) -> str:
-    """관계와 경조사 종류에 따른 적정 금액을 추천합니다.
+    """경조사비 비서 - 관계와 경조사 종류에 따른 적정 금액을 추천합니다.
 
     Args:
         relationship: 관계 (친한친구/직장동료/직장상사/친척/아는사람/모르는사람)
@@ -312,9 +337,17 @@ def recommend_amount(
     return result
 
 
-@mcp.tool()
+@mcp.tool(
+    title="경조사비 비서 - 주고받기 비교",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def check_balance(person: str) -> str:
-    """특정 인물과의 경조사비 주고받은 내역을 비교합니다.
+    """경조사비 비서 - 특정 인물과의 경조사비 주고받은 내역을 비교합니다.
 
     Args:
         person: 조회할 상대방 이름 (부분 일치 검색 가능)
@@ -365,13 +398,21 @@ def check_balance(person: str) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(
+    title="경조사비 비서 - 메시지 생성",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def generate_message(
     event_type: str,
     person_name: str,
     tone: str = "따뜻한",
 ) -> str:
-    """경조사에 맞는 메시지를 생성합니다.
+    """경조사비 비서 - 경조사에 맞는 메시지를 생성합니다.
 
     Args:
         event_type: 경조사 종류 (결혼/돌잔치/부고/생일)
@@ -401,12 +442,20 @@ def generate_message(
     return f'💬 추천 메시지 ({tone}):\n\n"{message}"'
 
 
-@mcp.tool()
+@mcp.tool(
+    title="경조사비 비서 - 월별 요약",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
 def summarize_monthly(
     year: Optional[int] = None,
     month: Optional[int] = None,
 ) -> str:
-    """월별 경조사 지출·수입을 요약합니다.
+    """경조사비 비서 - 월별 경조사 지출·수입을 요약합니다.
 
     Args:
         year: 연도 (생략 시 올해)
